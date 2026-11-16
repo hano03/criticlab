@@ -72,4 +72,16 @@ def test_a_shorter_run_does_not_count_as_finished(tmp_path):
 def test_estimate_uses_measured_speeds(tmp_path):
     cpu, wall = run_week2.estimate_hours(_jobs(tmp_path), 300_000, 6)
     expected = (10 * 300_000 / 75 + 30 * 300_000 / 127) / 3600
-    assert abs(cpu - expected) < 1e-9 and abs(wall - expected / 6) < 1e-9
+    assert abs(cpu - expected) < 1e-9
+    assert expected / 6 <= wall <= expected / 6 + 300_000 / 75 / 3600  # rounds, at most one job extra
+
+
+def test_wall_estimate_counts_rounds(tmp_path):
+    jobs = run_week2.build_jobs(["ddpg"], ENVS, [0, 1, 2], 300_000, 10, tmp_path)  # 6 equal jobs
+    one = 300_000 / 127 / 3600
+    assert abs(run_week2.estimate_hours(jobs, 300_000, 6)[1] - one) < 1e-9
+    assert abs(run_week2.estimate_hours(jobs, 300_000, 4)[1] - 2 * one) < 1e-9   # 4 + 2: two rounds
+
+
+def test_week2_default_is_unchanged_by_ppo():
+    assert run_week2.SLOW_FIRST == ["sac", "td3", "td3_no_cdq", "ddpg"]

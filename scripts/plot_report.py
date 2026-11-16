@@ -4,10 +4,15 @@ Usage (from the repo root; wildcards are expanded here, so they also work in Pow
     python scripts/plot_report.py "runs/Hopper-v5__*" --out figures/hopper.png
     python scripts/plot_report.py runs --out figures/all.png     # every run under runs/
 
-Runs are grouped by algorithm (TD3 without clipped double-Q counts as its own group) and
-drawn as mean +/- sample std across seeds. Six panels:
+Runs are grouped by algorithm (TD3 without clipped double-Q, and PPO with a non-default GAE
+lambda, count as their own groups) and drawn as mean +/- sample std across seeds. Six panels:
     1 return                 2 normalised Q bias       3 calibration at the final probe
     4 rank calibration       5 twin disagreement       6 TD error |delta|
+Panels 5 and 6 need twin critics and a replay buffer. When no run in a figure has them (PPO
+only), they show PPO's explained variance and value loss instead.
+
+Options for comparing sweeps of different lengths (week 2: 300k steps, week 3 PPO: 1M):
+    python scripts/plot_report.py runs/week2 runs/week3 --max-step 300000 --only ddpg td3 td3_no_cdq sac ppo
 It also writes <out>_hero.png: the README figure, built to be robust twice over: the median
 over states within each probe (--hero-metric), then the median and interquartile range across
 seeds (--hero-agg). Panels use mean ± sample std across seeds.
@@ -30,10 +35,14 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 # Colour follows the algorithm, never its rank (validated categorical slots 1-4, light mode).
-COLORS = {"td3": "#2a78d6", "ddpg": "#eb6834", "sac": "#1baf7a", "td3_no_cdq": "#eda100"}
-LABELS = {"td3": "TD3", "ddpg": "DDPG", "sac": "SAC", "td3_no_cdq": "TD3 w/o clipped double-Q"}
-STYLES = {"td3_no_cdq": "--"}  # secondary encoding for the ablation
-ORDER = ["ddpg", "td3_no_cdq", "td3", "sac"]
+# Slots 6 and 7 (green, violet) for the PPO lambda variants; validated with slot 5 as a set.
+COLORS = {"td3": "#2a78d6", "ddpg": "#eb6834", "sac": "#1baf7a", "td3_no_cdq": "#eda100", "ppo": "#e87ba4",
+          "ppo_lam0.8": "#008300", "ppo_lam1.0": "#6250d6"}
+LABELS = {"td3": "TD3", "ddpg": "DDPG", "sac": "SAC", "td3_no_cdq": "TD3 w/o clipped double-Q",
+          "ppo": "PPO, λ = 0.95", "ppo_lam0.8": "PPO, λ = 0.8", "ppo_lam1.0": "PPO, λ = 1.0"}
+STYLES = {"td3_no_cdq": "--", "ppo_lam0.8": "--", "ppo_lam1.0": ":"}  # secondary encoding
+ORDER = ["ddpg", "td3_no_cdq", "td3", "sac", "ppo", "ppo_lam0.8", "ppo_lam1.0"]
+DEFAULT_GAE_LAMBDA = 0.95
 FALLBACK = "#6250d6"
 
 SURFACE, INK, INK_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e6e5e0"
@@ -55,10 +64,40 @@ def find_reports(inputs: list[str]) -> list[Path]:
 
 
 def group_key(meta: dict) -> str:
+    """Configuration name of a run (same rule as run_week2.algo_key)."""
     algo = meta.get("algo", "unknown")
     if algo == "td3" and meta.get("clipped_double_q") is False:
         return "td3_no_cdq"
+    if algo == "ppo":
+        lam = float(meta.get("gae_lambda", DEFAULT_GAE_LAMBDA))
+        return "ppo" if abs(lam - DEFAULT_GAE_LAMBDA) < 1e-9 else f"ppo_lam{lam}"
     return algo
+
+
+def label(key: str) -> str:
+    if key in LABELS:
+        return LABELS[key]
+    if key.startswith("ppo_lam"):
+        return f"PPO, λ = {key[len('ppo_lam'):]}"
+    return key
+
+
+def recorded(groups: dict[str, list[dict]], metric: str) -> bool:
+    return any(p["metrics"].get(metric) is not None for g in groups.values() for r in g for p in r["probes"])
+
+
+def load_groups(inputs: list[str], max_step: int | None = None, only: list[str] | None = None):
+    """env_id -> group key -> reports. Probes after max_step are dropped (the 'final probe' then
+    becomes the last one at or before max_step); runs with no probe left are skipped."""
+    by_env: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
+    for p in find_reports(inputs):
+        report = json.loads(p.read_text(encoding="utf-8"))
+        if max_step is not None:
+            report["probes"] = [q for q in report.get("probes", []) if q["step"] <= max_step]
+        key = group_key(report["meta"])
+        if report.get("probes") and (not only or key in only):
+            by_env[report["meta"]["env_id"]][key].append(report)
+    return by_env
 
 
 def stack(reports: list[dict], key: str):
@@ -177,21 +216,33 @@ def calibration(ax, reports: list[dict], key: str, n_bins: int = 10):
     return line, (min(qm.min(), gm.min()), max(qm.max(), gm.max()))
 
 
+def line_panels(groups: dict[str, list[dict]]) -> list[tuple[str, str, str | None]]:
+    """(title, y label, metric) for panels 1, 2, 4, 5, 6 (panel 3, calibration, is drawn apart)."""
+    panels = [
+        ("1  Return", "episode return", None),
+        ("2  Normalised Q bias  (> 0 = overestimation)", "(Q − G) / max(|G|, 10)", "bias/norm_bias_mean"),
+        ("4  Rank calibration", "Spearman(Q, G)", "bias/spearman"),
+        ("5  Twin-critic disagreement", "mean |Q1 − Q2|", "twin/abs_diff_mean"),
+        ("6  TD error on replay batches", "mean |δ|", "td/abs_mean"),
+    ]
+    # V-critic runs only (PPO): no twin critics, no replay batches -> PPO's own critic metrics
+    if not recorded(groups, "twin/abs_diff_mean") and recorded(groups, "ppo/explained_variance"):
+        panels[3] = ("5  Explained variance (PPO's own critic metric)", "1 − Var(R − V) / Var(R)",
+                     "ppo/explained_variance")
+    if not recorded(groups, "td/abs_mean") and recorded(groups, "ppo/value_loss"):
+        panels[4] = ("6  Value loss (scaled reward units)", "value loss", "ppo/value_loss")
+    return panels
+
+
 def figure_for_env(env_id: str, groups: dict[str, list[dict]], out: Path, hero: bool,
                    hero_metric: str = "median", hero_agg: str = "median") -> list[Path]:
     keys = [k for k in ORDER if k in groups] + sorted(k for k in groups if k not in ORDER)
     seeds = {k: len(groups[k]) for k in keys}
-    name = {k: f"{LABELS.get(k, k)} ({seeds[k]} seed{'s' if seeds[k] != 1 else ''})" for k in keys}
+    name = {k: f"{label(k)} ({seeds[k]} seed{'s' if seeds[k] != 1 else ''})" for k in keys}
 
     fig, axes = plt.subplots(2, 3, figsize=(15, 8.6), dpi=150, facecolor=SURFACE)
     (a_ret, a_bias, a_cal), (a_rank, a_twin, a_td) = axes
-    panels = [
-        (a_ret, "1  Return", "episode return", None),
-        (a_bias, "2  Normalised Q bias  (> 0 = overestimation)", "(Q − G) / max(|G|, 10)", "bias/norm_bias_mean"),
-        (a_rank, "4  Rank calibration", "Spearman(Q, G)", "bias/spearman"),
-        (a_twin, "5  Twin-critic disagreement", "mean |Q1 − Q2|", "twin/abs_diff_mean"),
-        (a_td, "6  TD error on replay batches", "mean |δ|", "td/abs_mean"),
-    ]
+    panels = [(ax, *spec) for ax, spec in zip((a_ret, a_bias, a_rank, a_twin, a_td), line_panels(groups))]
     handles = {}
     bias_ends = []
     for ax, title, ylabel, metric in panels:
@@ -206,7 +257,7 @@ def figure_for_env(env_id: str, groups: dict[str, list[dict]], out: Path, hero: 
                 handles.setdefault(k, line)
                 if metric == "bias/norm_bias_mean":
                     last = np.where(np.isfinite(mean))[0][-1]
-                    bias_ends.append((steps[last], mean[last], LABELS.get(k, k)))
+                    bias_ends.append((steps[last], mean[last], label(k)))
         if metric == "bias/norm_bias_mean":
             ax.axhline(0, color=INK_2, linewidth=1, zorder=1)
         if not drew:
@@ -264,7 +315,7 @@ def figure_for_env(env_id: str, groups: dict[str, list[dict]], out: Path, hero: 
             if line is not None:
                 hh.append((line, name[k]))
                 last = np.where(np.isfinite(centre))[0][-1]
-                ends.append((steps[last], centre[last], LABELS.get(k, k)))
+                ends.append((steps[last], centre[last], label(k)))
         ax.axhline(0, color=INK_2, linewidth=1, zorder=1)
         ax.text(0.005, 0.0, " unbiased", transform=ax.get_yaxis_transform(), va="bottom",
                 fontsize=8, color=INK_2)
@@ -287,15 +338,13 @@ def figure_for_env(env_id: str, groups: dict[str, list[dict]], out: Path, hero: 
 
 
 def plot(inputs: list[str], out: str, hero: bool = True, hero_metric: str = "median",
-         hero_agg: str = "median") -> list[Path]:
-    paths = find_reports(inputs)
-    if not paths:
+         hero_agg: str = "median", max_step: int | None = None,
+         only: list[str] | None = None) -> list[Path]:
+    if not find_reports(inputs):
         raise SystemExit(f"no critic_report.json found under: {' '.join(inputs)}")
-    by_env: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
-    for p in paths:
-        report = json.loads(p.read_text(encoding="utf-8"))
-        if report.get("probes"):
-            by_env[report["meta"]["env_id"]][group_key(report["meta"])].append(report)
+    by_env = load_groups(inputs, max_step, only)
+    if not by_env:
+        raise SystemExit(f"no runs left after --max-step / --only filters under: {' '.join(inputs)}")
     out_path = Path(out)
     written = []
     for env_id, groups in sorted(by_env.items()):
@@ -314,9 +363,13 @@ def main() -> None:
                         help="per-probe statistic in the hero figure (panel 2 always shows the mean)")
     parser.add_argument("--hero-agg", choices=["median", "mean"], default="median",
                         help="across seeds: median + interquartile band (default), or mean ± std")
+    parser.add_argument("--max-step", type=int, default=None,
+                        help="ignore probes after this step, e.g. 300000 to compare PPO with week 2")
+    parser.add_argument("--only", nargs="+", default=None,
+                        help="only these groups, e.g. ppo ppo_lam0.8 ppo_lam1.0")
     args = parser.parse_args()
     for path in plot(args.inputs, args.out, hero=not args.no_hero, hero_metric=args.hero_metric,
-                     hero_agg=args.hero_agg):
+                     hero_agg=args.hero_agg, max_step=args.max_step, only=args.only):
         print(f"wrote {path}")
 
 

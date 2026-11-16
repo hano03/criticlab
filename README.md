@@ -2,9 +2,9 @@
 
 **Single-file deep RL algorithms that tell you whether their critic can be trusted.**
 
-Every run regularly plays a few episodes, measures what actually happened, and compares that with what the critic predicted. You get overestimation, calibration and twin-critic disagreement for DDPG, TD3 and SAC in one standard figure, alongside the usual learning curve.
+Every run regularly plays a few episodes, measures what actually happened, and compares that with what the critic predicted. You get overestimation, calibration and twin-critic disagreement for DDPG, TD3, SAC and PPO in one standard figure, alongside the usual learning curve.
 
-![Normalised Q bias on Hopper-v5: DDPG and TD3 without clipped double-Q overestimate, TD3 and SAC stay near zero](assets/hopper_bias_hero.png)
+![Normalised Q bias on Hopper-v5: DDPG and TD3 without clipped double-Q overestimate, TD3 and SAC stay near zero, PPO's value critic sits on zero](assets/hopper_bias_hero.png)
 
 *Hopper-v5, 5 seeds, 300k steps. Above zero, the critic promises more return than the policy delivers. Line: median across seeds; band: interquartile range.*
 
@@ -18,21 +18,26 @@ Because the learning curve hides it. In our week-2 sweep, DDPG, TD3 and TD3 with
 | Hopper-v5 | TD3 w/o clipped double-Q | 1,597 ± 934 | **+0.82** (overestimates) |
 | Hopper-v5 | TD3 | 1,475 ± 1,179 | −0.18 |
 | Hopper-v5 | SAC | 2,781 ± 990 | −0.06 |
+| Hopper-v5 | PPO (V critic) | 2,727 ± 1,036 | −0.002 |
 | HalfCheetah-v5 | DDPG | 7,580 ± 829 | +0.03 |
 | HalfCheetah-v5 | TD3 w/o clipped double-Q | 7,635 ± 688 | −0.13 |
 | HalfCheetah-v5 | TD3 | 7,510 ± 418 | **−0.26** (underestimates) |
 | HalfCheetah-v5 | SAC | 9,044 ± 817 | −0.10 |
+| HalfCheetah-v5 | PPO (V critic) | 1,912 ± 815 | −0.003 |
 
-*Mean ± sample std over 5 seeds. Bias is (Q − G) / max(|G|, 10) per state, as in REDQ; median over states, then mean over seeds.*
+*Mean ± sample std over 5 seeds. Bias is (Q − G) / max(|G|, 10) per state, as in REDQ; median over states, then mean over seeds. PPO's critic is V(s); its rows are the 300k probe of 1M-step runs.*
 
 What the critics show:
 
 - **DDPG overestimates on Hopper, not on HalfCheetah.**
 - **Clipped double-Q does 89% of TD3's bias correction on Hopper.** Without it, TD3's critic is as biased as DDPG's.
 - **On HalfCheetah, TD3 overcorrects into consistent underestimation** (−0.258 ± 0.013 across seeds).
-- **SAC's critic ranks states best** (Spearman 0.86 on Hopper, 0.72 on HalfCheetah).
+- **Among the Q-critics, SAC's ranks states best** (Spearman 0.86 on Hopper, 0.72 on HalfCheetah).
+- **PPO's value critic is the only one unbiased in both environments** (−0.002 and −0.003, neither distinguishable from zero), as theory predicts for on-policy targets with no maximisation. Unbiased is not the same as informative: on HalfCheetah it ranks states worst of all five (Spearman 0.45).
+- **PPO's own critic metric can't see bias.** Explained variance ranged from −3.3 to 1.0 on critics that were all within 2% of the truth. See [`docs/findings_week3.md`](docs/findings_week3.md).
+- **Cheap signals don't replace the probe.** TD error and twin disagreement separate algorithms, but within a run they do not track the measured bias once training trends and the size of Q are removed, and they rose before a collapse about as often as chance. See [`docs/findings_q1_signals.md`](docs/findings_q1_signals.md).
 
-Full analysis, statistics and limits: [`docs/findings_week2.md`](docs/findings_week2.md).
+Full analysis, statistics and limits: [`docs/findings_week2.md`](docs/findings_week2.md) (DDPG, TD3, SAC) and [`docs/findings_week3.md`](docs/findings_week3.md) (PPO, GAE λ).
 
 ## Quickstart
 
@@ -80,7 +85,8 @@ Full definitions: [`docs/diagnostics.md`](docs/diagnostics.md).
 | [`criticlab/td3.py`](criticlab/td3.py) | TD3 (Fujimoto et al., 2018) | CleanRL hyperparameters; `--no-clipped-double-q` for the ablation |
 | [`criticlab/ddpg.py`](criticlab/ddpg.py) | DDPG (Lillicrap et al., 2016) | Written as `td3.py` minus TD3's three fixes, so `diff` shows exactly what TD3 adds |
 | [`criticlab/sac.py`](criticlab/sac.py) | SAC (Haarnoja et al., 2018) | Automatic α; probed with soft returns |
-| `ppo.py`, `dqn.py` | PPO, DQN / Double DQN | Coming next |
+| [`criticlab/ppo.py`](criticlab/ppo.py) | PPO (Schulman et al., 2017) | CleanRL hyperparameters; V(s) probed in real reward units; bootstraps through time limits. 1M steps: Hopper 3,278 ± 66, HalfCheetah 2,793 ± 1,260 |
+| `dqn.py` | DQN / Double DQN | Coming next |
 
 **Design rules:**
 - **One file per algorithm, readable top to bottom.**
@@ -94,17 +100,22 @@ Full definitions: [`docs/diagnostics.md`](docs/diagnostics.md).
 criticlab/
 ├── criticlab/
 │   ├── diagnostics.py        # the probe: Monte Carlo returns, bias, calibration, report file
-│   ├── td3.py  ddpg.py  sac.py
+│   ├── td3.py  ddpg.py  sac.py  ppo.py
 ├── scripts/
 │   ├── plot_report.py        # standard 6-panel figure + hero figure
 │   ├── run_week2.py          # any sweep: parallel, resumable, with a time estimate
+│   ├── run_week3.py          # the PPO sweep: main grid + GAE λ study
+│   ├── summarize_sweep.py    # per-seed results table with Welch tests
 │   ├── launch.py             # parallel runner used by the scripts above
 │   ├── smoke_test.py         # every algorithm, a few thousand steps on Pendulum
-│   └── last_returns.py       # compare end-of-run returns with CleanRL logs
-├── tests/                    # 49 tests: returns, metrics, probe, plots, launcher, smoke runs
+│   ├── last_returns.py       # compare end-of-run returns with CleanRL logs
+│   └── analyze_signals.py    # do TD error / twin disagreement track the measured bias?
+├── tests/                    # 74 tests: returns, metrics, probe, GAE, plots, sweeps, smoke runs
 └── docs/
     ├── diagnostics.md        # what each metric means, how to read the figures
     ├── findings_week2.md     # the week-2 results in full
+    ├── findings_week3.md     # PPO and GAE λ
+    ├── findings_q1_signals.md  # cheap signals vs the probe
     └── implementation_details.md
 ```
 
@@ -116,9 +127,7 @@ criticlab/
 
 ## Roadmap
 
-- PPO: calibration of the state-value critic V(s), explained variance, the effect of GAE λ.
 - DQN / Double DQN: overestimation in discrete action spaces.
-- Can cheap signals (twin disagreement, TD error) predict the measured bias, so that no probe rollouts are needed?
 
 ## Citation
 

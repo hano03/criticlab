@@ -95,3 +95,48 @@ def test_hero_metric_choice_and_fallback(tmp_path):
     report.write_text(report.read_text(encoding="utf-8").replace('"bias/norm_bias_median": 0.01, ', ""),
                       encoding="utf-8")
     assert len(plot_report.plot([str(old)], str(tmp_path / "old.png"))) == 2
+
+
+def _write_ppo(root: Path, env_id: str, seed: int, lam: float = 0.95, steps=(10_000, 20_000, 30_000)) -> None:
+    rng = np.random.default_rng(seed)
+    probes = []
+    for step in steps:
+        g = rng.normal(100, 30, 200)
+        metrics = {"probe/return_mean": step / 100, "eval/deterministic_return_mean": step / 80,
+                   "bias/norm_bias_mean": -0.02, "bias/norm_bias_median": -0.02, "bias/spearman": 0.9,
+                   "ppo/explained_variance": 0.8, "ppo/value_loss": 0.1, "perf/sps_window": 900.0}
+        probes.append({"step": step, "metrics": metrics, "raw": {"q": (g - 2).tolist(), "g": g.tolist()}})
+    run = root / f"{env_id}__ppo__{seed}__{lam}"
+    run.mkdir(parents=True)
+    meta = {"algo": "ppo", "env_id": env_id, "seed": seed, "gae_lambda": lam, "num_steps": 2048}
+    (run / "critic_report.json").write_text(json.dumps({"meta": meta, "probes": probes}), encoding="utf-8")
+
+
+def test_ppo_lambda_variants_are_separate_groups(tmp_path):
+    for lam in (0.95, 0.8, 1.0):
+        _write_ppo(tmp_path, "Hopper-v5", 0, lam)
+    groups = plot_report.load_groups([str(tmp_path)])["Hopper-v5"]
+    assert sorted(groups) == ["ppo", "ppo_lam0.8", "ppo_lam1.0"]
+    assert plot_report.label("ppo_lam0.8") == "PPO, λ = 0.8"
+    assert plot_report.label("ppo_lam0.9") == "PPO, λ = 0.9"  # not in the table: still readable
+    written = plot_report.plot([str(tmp_path)], str(tmp_path / "lam.png"))
+    assert [p.name for p in written] == ["lam.png", "lam_hero.png"]
+
+
+def test_ppo_only_figure_shows_ppo_critic_panels(tmp_path):
+    _write_ppo(tmp_path, "Hopper-v5", 0)
+    metrics = [m for _, _, m in plot_report.line_panels(plot_report.load_groups([str(tmp_path)])["Hopper-v5"])]
+    assert metrics[3:] == ["ppo/explained_variance", "ppo/value_loss"]
+    _write_report(tmp_path, "Hopper-v5", "td3", 0, twin=True)  # mixed figure keeps the standard panels
+    metrics = [m for _, _, m in plot_report.line_panels(plot_report.load_groups([str(tmp_path)])["Hopper-v5"])]
+    assert metrics[3:] == ["twin/abs_diff_mean", "td/abs_mean"]
+
+
+def test_max_step_and_only_filters(tmp_path):
+    _write_ppo(tmp_path, "Hopper-v5", 0, steps=(10_000, 20_000, 30_000))
+    _write_report(tmp_path, "Hopper-v5", "td3", 0, twin=True)
+    by_env = plot_report.load_groups([str(tmp_path)], max_step=20_000, only=["ppo"])
+    assert list(by_env["Hopper-v5"]) == ["ppo"]
+    assert [p["step"] for p in by_env["Hopper-v5"]["ppo"][0]["probes"]] == [10_000, 20_000]
+    with pytest.raises(SystemExit):
+        plot_report.plot([str(tmp_path)], str(tmp_path / "x.png"), only=["sac"])

@@ -36,6 +36,22 @@ action's log-probability, and uses
 The entropy term starts at t+1 because Q(s_t, a_t) already conditions on a_t. This matches the
 recursion in REDQ's evaluator (`redq/utils/bias_utils.py`).
 
+**PPO is different again.** Its critic is a state-value function V(s) for the *stochastic*
+policy, so the probe runs that policy and ignores the action. Two details matter:
+
+- PPO learns V on rewards divided by a running scale σ (the std of the discounted return), so
+  the probe compares σ·V(s) with G. Without this, V is in the wrong units and the bias is
+  meaningless. Observations are normalised with the training statistics, frozen during the probe.
+- `ppo.py` bootstraps through time limits (γ·V(final state) is added to the last reward), so V
+  estimates an infinite-horizon value, like the off-policy critics.
+
+Check: on InvertedPendulum-v5, a solved policy earns 1 per step for 1,000 steps, so G ≈ 99.3–100
+for every usable state. After 150k steps, three seeds gave σ·V ≈ 97.8 and normalised bias −0.021,
+with almost no spread. Repeated on a second machine: σ·V 97.8–98.4, bias −0.021 to −0.013. Across
+those six seeds PPO's own explained variance ranged from −3.3 to +0.21: when every return is nearly
+the same, explained variance divides by a variance close to zero and says nothing about the
+critic. The probe still does.
+
 ## 2. The metrics
 
 All live in `runs/<run>/critic_report.json`, one entry per probe.
@@ -50,9 +66,12 @@ All live in `runs/<run>/critic_report.json`, one entry per probe.
 | `bias_min/*` | the same metrics using min(Q1, Q2) | Twin critics only: the value TD3 and SAC actually bootstrap from. `bias/*` uses their average |
 | `twin/abs_diff_mean` | mean \|Q1 − Q2\| | Twin critics only. A cheap uncertainty signal |
 | `td/abs_mean`, `td/target_q_mean`, `td/target_q_abs_max` | TD error and target size on the latest replay batch | A steadily rising TD error or target is an early warning of divergence |
-| `probe/return_mean` | undiscounted return of the probe episodes | For SAC this is the *stochastic* policy |
-| `eval/deterministic_return_mean` | SAC only: return of tanh(mean action) | The return to compare with TD3 and DDPG |
+| `probe/return_mean` | undiscounted return of the probe episodes | For SAC and PPO this is the *stochastic* policy |
+| `eval/deterministic_return_mean` | SAC and PPO: return of the mean action (tanh for SAC) | The return to compare with TD3 and DDPG |
 | `probe/alpha` | SAC only: α used for the soft returns | |
+| `ppo/reward_scale` | PPO only: σ, the running std of the discounted return | V is multiplied by it before comparison with G |
+| `ppo/explained_variance` | PPO only: 1 − Var(R − V)/Var(R) on the last rollout, in scaled units | PPO's usual critic metric. Uninformative when returns barely vary (see §1) |
+| `ppo/value_loss`, `ppo/approx_kl`, `ppo/clipfrac`, `ppo/entropy` | PPO only: last update's statistics | Standard PPO health checks |
 | `perf/sps_window` | environment steps per second since the previous probe (probe time included) | Use this, not the running average, for compute budgets |
 
 ## 3. Known effects to keep in mind
