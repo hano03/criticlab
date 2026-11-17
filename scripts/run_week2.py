@@ -42,10 +42,12 @@ ALGOS = {
     "double_dqn_tgt5000": ("criticlab.dqn", ["--double", "--target-network-frequency", "5000"]),
     "dqn_g3": ("criticlab.dqn", ["--gradient-steps", "3"]),     # 150 updates per target copy
     "dqn_g10": ("criticlab.dqn", ["--gradient-steps", "10"]),   # 500 updates per target copy
+    # week 5b: slow target at the high replay ratio, 5,000 updates per target copy
+    "dqn_tgt5000_g10": ("criticlab.dqn", ["--target-network-frequency", "5000", "--gradient-steps", "10"]),
 }
 SLOW_FIRST = ["sac", "td3", "td3_no_cdq", "ddpg"]           # the week-2 sweep, slowest first
 JOB_ORDER = SLOW_FIRST + ["ppo", "ppo_lam0.8", "ppo_lam1.0",
-                          "dqn_g10", "dqn_g3",  # week 5: slowest first
+                          "dqn_tgt5000_g10", "dqn_g10", "dqn_g3",  # weeks 5 and 5b: slowest first
                           "dqn", "double_dqn", "dqn_tgt5000", "double_dqn_tgt5000"]
 # Day 6 dress rehearsal, Hopper-v5, one thread per process, 3 running at once. PPO: estimated on
 # Day 16 from Hopper/HalfCheetah runs with 10 probe episodes, scaled to the user's machine by the
@@ -57,7 +59,7 @@ DQN_SPS = 1000
 # More gradient updates per env step slow DQN down. Day 29 pilot on Claude's 2-core machine, 3 at
 # once: 3 updates per call ran at 0.55x and 10 at 0.24x the speed of 1. Scaled to DQN_SPS:
 DQN_G3_SPS, DQN_G10_SPS = 550, 250
-MEASURED_SPS = {"dqn_g3": DQN_G3_SPS, "dqn_g10": DQN_G10_SPS,
+MEASURED_SPS = {"dqn_g3": DQN_G3_SPS, "dqn_g10": DQN_G10_SPS, "dqn_tgt5000_g10": DQN_G10_SPS,
                 "sac": 75, "td3": 127, "td3_no_cdq": 127, "ddpg": 127,
                 "ppo": PPO_SPS, "ppo_lam0.8": PPO_SPS, "ppo_lam1.0": PPO_SPS,
                 "dqn": DQN_SPS, "double_dqn": DQN_SPS, "dqn_tgt5000": DQN_SPS, "double_dqn_tgt5000": DQN_SPS}

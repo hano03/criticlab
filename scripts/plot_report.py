@@ -44,9 +44,12 @@ import numpy as np  # noqa: E402
 # target copy (50 by default, 150, 500) at the default period: the same ramp with a middle step
 # (#e34948 -> #be3a39 -> #9b2b2b, validated with --ordinal), so across weeks 4 and 5 darker red
 # always means more updates against each frozen target (the 5,000-step period also gives 500).
+# Week 5b adds 5,000 updates per copy as a fourth, darker step (#6e1f1f; the 4-step ramp validated
+# with --ordinal).
 COLORS = {"td3": "#2a78d6", "ddpg": "#eb6834", "sac": "#1baf7a", "td3_no_cdq": "#eda100", "ppo": "#e87ba4",
           "ppo_lam0.8": "#008300", "ppo_lam1.0": "#6250d6", "dqn": "#e34948", "double_dqn": "#e34948",
-          "dqn_tgt5000": "#9b2b2b", "double_dqn_tgt5000": "#9b2b2b", "dqn_g3": "#be3a39", "dqn_g10": "#9b2b2b"}
+          "dqn_tgt5000": "#9b2b2b", "double_dqn_tgt5000": "#9b2b2b", "dqn_g3": "#be3a39", "dqn_g10": "#9b2b2b",
+          "dqn_tgt5000_g10": "#6e1f1f"}
 LABELS = {"td3": "TD3", "ddpg": "DDPG", "sac": "SAC", "td3_no_cdq": "TD3 w/o clipped double-Q",
           "ppo": "PPO, λ = 0.95", "ppo_lam0.8": "PPO, λ = 0.8", "ppo_lam1.0": "PPO, λ = 1.0",
           "dqn": "DQN", "double_dqn": "Double DQN",
@@ -54,7 +57,8 @@ LABELS = {"td3": "TD3", "ddpg": "DDPG", "sac": "SAC", "td3_no_cdq": "TD3 w/o cli
 STYLES = {"td3_no_cdq": "--", "ppo_lam0.8": "--", "ppo_lam1.0": ":", "double_dqn": "--",
           "double_dqn_tgt5000": "--"}  # secondary encoding
 ORDER = ["ddpg", "td3_no_cdq", "td3", "sac", "ppo", "ppo_lam0.8", "ppo_lam1.0",
-         "dqn", "double_dqn", "dqn_tgt5000", "double_dqn_tgt5000", "dqn_g3", "dqn_g10"]
+         "dqn", "double_dqn", "dqn_tgt5000", "double_dqn_tgt5000", "dqn_g3", "dqn_g10",
+         "dqn_tgt5000_g10"]
 DEFAULT_TARGET_PERIOD = 500
 DEFAULT_TRAIN_FREQUENCY = 10
 DEFAULT_GAE_LAMBDA = 0.95
