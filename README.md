@@ -36,9 +36,15 @@ What the critics show:
 - **PPO's value critic is the only one unbiased in both environments** (−0.002 and −0.003, neither distinguishable from zero), as theory predicts for on-policy targets with no maximisation. Unbiased is not the same as informative: on HalfCheetah it ranks states worst of all five (Spearman 0.45).
 - **PPO's own critic metric can't see bias.** Explained variance ranged from −3.3 to 1.0 on critics that were all within 2% of the truth. See [`docs/findings_week3.md`](docs/findings_week3.md).
 - **DQN's CartPole values overshoot what any policy can earn, and the target network is why.** With CleanRL's defaults, DQN's largest prediction peaks near 250 against a hard ceiling of 100. In a pre-registered test, copying the target every 5,000 steps instead of 500 removed the overshoot (−148 [−154, −142] above the copy envelope); Double DQN made no difference at either rate. The fix costs sample efficiency, and the policy reached a perfect score despite the overshoot. See [`docs/findings_week4.md`](docs/findings_week4.md).
+- **What matters is how often the target is copied in env steps, not how much training happens between copies.** Two follow-up tests, each pre-registered, gave these results:
+  - Ten times more gradient updates per copy, at the same copy interval, *more than doubled* the overshoot (+232 [+132, +331]).
+  - Copying every 5,000 steps still removed 91% of the overshoot at that ten times higher replay ratio. The replay ratio's harm was about 7× smaller with sparse copies.
+  - The slow target slowed the runaway but did not stop it: max-Q was still rising at 1.5M steps, and return was lower.
+  
+  See [`docs/findings_week5.md`](docs/findings_week5.md).
 - **Cheap signals don't replace the probe.** TD error and twin disagreement separate algorithms, but within a run they do not track the measured bias once training trends and the size of Q are removed, and they rose before a collapse about as often as chance. See [`docs/findings_q1_signals.md`](docs/findings_q1_signals.md).
 
-Full analysis, statistics and limits: [`docs/findings_week2.md`](docs/findings_week2.md) (DDPG, TD3, SAC), [`docs/findings_week3.md`](docs/findings_week3.md) (PPO, GAE λ) and [`docs/findings_week4.md`](docs/findings_week4.md) (DQN, Double DQN, target network).
+Full analysis, statistics and limits: [`docs/findings_week2.md`](docs/findings_week2.md) (DDPG, TD3, SAC), [`docs/findings_week3.md`](docs/findings_week3.md) (PPO, GAE λ), [`docs/findings_week4.md`](docs/findings_week4.md) (DQN, Double DQN, target network) and [`docs/findings_week5.md`](docs/findings_week5.md) (target copy interval × replay ratio).
 
 ## Quickstart
 
@@ -47,7 +53,7 @@ Works on Linux and Windows, on CPU. No GPU needed.
 ```bash
 git clone https://github.com/hano03/criticlab && cd criticlab
 pip install -e ".[dev]"
-python -m pytest -q                      # 49 tests, about 30 s
+python -m pytest -q                      # 105 tests, about 1 minute
 
 # one run: TD3 on Hopper, 100k steps (about 15 minutes on a laptop CPU)
 python -m criticlab.td3 --env-id Hopper-v5 --seed 0 --total-timesteps 100000
@@ -87,7 +93,7 @@ Full definitions: [`docs/diagnostics.md`](docs/diagnostics.md).
 | [`criticlab/ddpg.py`](criticlab/ddpg.py) | DDPG (Lillicrap et al., 2016) | Written as `td3.py` minus TD3's three fixes, so `diff` shows exactly what TD3 adds |
 | [`criticlab/sac.py`](criticlab/sac.py) | SAC (Haarnoja et al., 2018) | Automatic α; probed with soft returns |
 | [`criticlab/ppo.py`](criticlab/ppo.py) | PPO (Schulman et al., 2017) | CleanRL hyperparameters; V(s) probed in real reward units; bootstraps through time limits. 1M steps: Hopper 3,278 ± 66, HalfCheetah 2,793 ± 1,260 |
-| [`criticlab/dqn.py`](criticlab/dqn.py) | DQN (Mnih et al., 2015), Double DQN (van Hasselt et al., 2016) | CleanRL hyperparameters; `--double` for Double DQN; greedy-policy probe. Return over 400k–500k: CartPole 476.6 ± 26.5, Acrobot −84.9 ± 1.3 |
+| [`criticlab/dqn.py`](criticlab/dqn.py) | DQN (Mnih et al., 2015), Double DQN (van Hasselt et al., 2016) | CleanRL hyperparameters; `--double` for Double DQN; `--gradient-steps` for more updates per training call; greedy-policy probe. Return over 400k–500k: CartPole 476.6 ± 26.5, Acrobot −84.9 ± 1.3 |
 
 **Design rules:**
 - **One file per algorithm, readable top to bottom.**
@@ -107,18 +113,23 @@ criticlab/
 │   ├── run_week2.py          # any sweep: parallel, resumable, with a time estimate
 │   ├── run_week3.py          # the PPO sweep: main grid + GAE λ study
 │   ├── run_week4.py          # the DQN sweep: target period × Double DQN, pre-registered
+│   ├── run_week5.py          # gradient updates per target copy, pre-registered
+│   ├── run_week5b.py         # target copy interval × replay ratio (2×2), pre-registered
 │   ├── dqn_check.py          # DQN / Double DQN quick check on CartPole and Acrobot
 │   ├── summarize_sweep.py    # per-seed results table with Welch tests
 │   ├── launch.py             # parallel runner used by the scripts above
 │   ├── smoke_test.py         # every algorithm, a few thousand steps on Pendulum
 │   ├── last_returns.py       # compare end-of-run returns with CleanRL logs
 │   └── analyze_signals.py    # do TD error / twin disagreement track the measured bias?
-├── tests/                    # 92 tests: returns, metrics, probe, GAE, plots, sweeps, smoke runs
+├── tests/                    # 105 tests: returns, metrics, probe, GAE, plots, sweeps, smoke runs
 └── docs/
     ├── diagnostics.md        # what each metric means, how to read the figures
     ├── findings_week2.md     # the week-2 results in full
     ├── findings_week3.md     # PPO and GAE λ
     ├── findings_week4.md     # DQN, Double DQN, target network
+    ├── findings_week5.md     # what makes DQN's values run away: copy interval vs replay ratio
+    ├── preregistration_week5.md   # written and pushed before each sweep
+    ├── preregistration_week5b.md
     ├── findings_q1_signals.md  # cheap signals vs the probe
     └── implementation_details.md
 ```
@@ -131,7 +142,8 @@ criticlab/
 
 ## Roadmap
 
-- A new finding rather than a reproduction (candidates: the cost of TD3's underestimation, critic behaviour around collapses, early optimism with small GAE λ).
+- Test the buffer-turnover hypothesis from week 5: at a fixed copy interval and replay ratio, does a larger replay buffer reduce DQN's overshoot?
+- Other open questions: the cost of TD3's underestimation, critic behaviour around collapses, early optimism with small GAE λ.
 - Walker2d and Ant if time allows.
 
 ## Citation

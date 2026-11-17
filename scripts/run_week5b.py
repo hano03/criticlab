@@ -250,7 +250,7 @@ def figure(src: dict, out: Path) -> Path:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.4), gridspec_kw={"width_ratios": [1.6, 1]})
     fig.patch.set_facecolor(pr.SURFACE)
     pr.style_axis(ax1, "a  Largest prediction, by target copies", "max Q (median across seeds)")
-    pr.style_axis(ax2, f"b  Peak excess over the envelope, first {MATCHED_COPIES} copies", "max Q − envelope")
+    pr.style_axis(ax2, f"b  Peak excess, first {MATCHED_COPIES} copies", "max Q − envelope")
     n = np.arange(0, MATCHED_COPIES + 1)
     ax1.plot(n, [week4.envelope(int(i), CEILING, R_MAX) for i in n], color=pr.INK_2, linewidth=1.2,
              linestyle=":", label="copy envelope")
