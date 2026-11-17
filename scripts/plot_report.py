@@ -45,11 +45,12 @@ import numpy as np  # noqa: E402
 # (#e34948 -> #be3a39 -> #9b2b2b, validated with --ordinal), so across weeks 4 and 5 darker red
 # always means more updates against each frozen target (the 5,000-step period also gives 500).
 # Week 5b adds 5,000 updates per copy as a fourth, darker step (#6e1f1f; the 4-step ramp validated
-# with --ordinal).
+# with --ordinal). Week 5c varies the replay buffer at the default copy interval: lightness = buffer
+# size there (#ec7f7e 2,500 -> #e34948 10,000, the default -> #9b2b2b 40,000; validated as ordinal).
 COLORS = {"td3": "#2a78d6", "ddpg": "#eb6834", "sac": "#1baf7a", "td3_no_cdq": "#eda100", "ppo": "#e87ba4",
           "ppo_lam0.8": "#008300", "ppo_lam1.0": "#6250d6", "dqn": "#e34948", "double_dqn": "#e34948",
           "dqn_tgt5000": "#9b2b2b", "double_dqn_tgt5000": "#9b2b2b", "dqn_g3": "#be3a39", "dqn_g10": "#9b2b2b",
-          "dqn_tgt5000_g10": "#6e1f1f"}
+          "dqn_tgt5000_g10": "#6e1f1f", "dqn_buf2500": "#ec7f7e", "dqn_buf40000": "#9b2b2b"}
 LABELS = {"td3": "TD3", "ddpg": "DDPG", "sac": "SAC", "td3_no_cdq": "TD3 w/o clipped double-Q",
           "ppo": "PPO, λ = 0.95", "ppo_lam0.8": "PPO, λ = 0.8", "ppo_lam1.0": "PPO, λ = 1.0",
           "dqn": "DQN", "double_dqn": "Double DQN",
@@ -58,9 +59,10 @@ STYLES = {"td3_no_cdq": "--", "ppo_lam0.8": "--", "ppo_lam1.0": ":", "double_dqn
           "double_dqn_tgt5000": "--"}  # secondary encoding
 ORDER = ["ddpg", "td3_no_cdq", "td3", "sac", "ppo", "ppo_lam0.8", "ppo_lam1.0",
          "dqn", "double_dqn", "dqn_tgt5000", "double_dqn_tgt5000", "dqn_g3", "dqn_g10",
-         "dqn_tgt5000_g10"]
+         "dqn_tgt5000_g10", "dqn_buf2500", "dqn_buf40000"]
 DEFAULT_TARGET_PERIOD = 500
 DEFAULT_TRAIN_FREQUENCY = 10
+DEFAULT_BUFFER = 10_000
 DEFAULT_GAE_LAMBDA = 0.95
 FALLBACK = "#6250d6"
 
@@ -95,13 +97,18 @@ def group_key(meta: dict) -> str:
         period = int(meta.get("target_network_frequency", DEFAULT_TARGET_PERIOD))
         key = base if period == DEFAULT_TARGET_PERIOD else f"{base}_tgt{period}"
         steps = int(meta.get("gradient_steps", 1))
-        return key if steps == 1 else f"{key}_g{steps}"
+        key = key if steps == 1 else f"{key}_g{steps}"
+        buffer = int(meta.get("buffer_size", DEFAULT_BUFFER))
+        return key if buffer == DEFAULT_BUFFER else f"{key}_buf{buffer}"
     return algo
 
 
 def label(key: str) -> str:
     if key in LABELS:
         return LABELS[key]
+    if "dqn" in key and "_buf" in key:
+        rest, buffer = key.rsplit("_buf", 1)
+        return f"{label(rest)}, buffer {int(buffer):,}"
     if "dqn" in key and "_g" in key:  # gradient steps per call -> updates per target copy
         rest, steps = key.rsplit("_g", 1)
         period = int(rest.split("_tgt")[1]) if "_tgt" in rest else DEFAULT_TARGET_PERIOD

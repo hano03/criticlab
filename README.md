@@ -53,7 +53,7 @@ Works on Linux and Windows, on CPU. No GPU needed.
 ```bash
 git clone https://github.com/hano03/criticlab && cd criticlab
 pip install -e ".[dev]"
-python -m pytest -q                      # 105 tests, about 1 minute
+python -m pytest -q                      # 110 tests, about 1 minute
 
 # one run: TD3 on Hopper, 100k steps (about 15 minutes on a laptop CPU)
 python -m criticlab.td3 --env-id Hopper-v5 --seed 0 --total-timesteps 100000
@@ -115,13 +115,14 @@ criticlab/
 │   ├── run_week4.py          # the DQN sweep: target period × Double DQN, pre-registered
 │   ├── run_week5.py          # gradient updates per target copy, pre-registered
 │   ├── run_week5b.py         # target copy interval × replay ratio (2×2), pre-registered
+│   ├── run_week5c.py         # replay buffer size, pre-registered
 │   ├── dqn_check.py          # DQN / Double DQN quick check on CartPole and Acrobot
 │   ├── summarize_sweep.py    # per-seed results table with Welch tests
 │   ├── launch.py             # parallel runner used by the scripts above
 │   ├── smoke_test.py         # every algorithm, a few thousand steps on Pendulum
 │   ├── last_returns.py       # compare end-of-run returns with CleanRL logs
 │   └── analyze_signals.py    # do TD error / twin disagreement track the measured bias?
-├── tests/                    # 105 tests: returns, metrics, probe, GAE, plots, sweeps, smoke runs
+├── tests/                    # 110 tests: returns, metrics, probe, GAE, plots, sweeps, smoke runs
 └── docs/
     ├── diagnostics.md        # what each metric means, how to read the figures
     ├── findings_week2.md     # the week-2 results in full
@@ -130,6 +131,7 @@ criticlab/
     ├── findings_week5.md     # what makes DQN's values run away: copy interval vs replay ratio
     ├── preregistration_week5.md   # written and pushed before each sweep
     ├── preregistration_week5b.md
+    ├── preregistration_week5c.md
     ├── findings_q1_signals.md  # cheap signals vs the probe
     └── implementation_details.md
 ```
@@ -142,7 +144,7 @@ criticlab/
 
 ## Roadmap
 
-- Test the buffer-turnover hypothesis from week 5: at a fixed copy interval and replay ratio, does a larger replay buffer reduce DQN's overshoot?
+- Week 5c (pre-registered, running): does the replay buffer's size change DQN's overshoot, and in which direction? The turnover and overfitting explanations predict opposite answers. See [`docs/preregistration_week5c.md`](docs/preregistration_week5c.md).
 - Other open questions: the cost of TD3's underestimation, critic behaviour around collapses, early optimism with small GAE λ.
 - Walker2d and Ant if time allows.
 

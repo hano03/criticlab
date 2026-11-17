@@ -177,19 +177,28 @@ that the copy interval "not the replay ratio" decides. The data say more than th
   interval. But the slow target's protection of the value estimate did not protect the return at the
   high ratio (D: 370 against C: 472).
 
-**A hypothesis, post hoc and untested.** One quantity that orders all four cells is *how many target
-copies happen per turnover of the replay buffer*: buffer size / K.
+**Two hypotheses, post hoc, now under test.** One quantity separates the two fast-copy cells from
+the two slow-copy cells: *how many target copies happen per turnover of the replay buffer*, buffer
+size / K.
 
-- With copies every 500 steps on a 10k buffer, that is 20 copies per turnover.
-- With copies every 5,000, it is 2.
+- With copies every 500 steps on a 10k buffer, that is 20 copies per turnover (A and B).
+- With copies every 5,000, it is 2 (C and D).
 
-With 20 copies per turnover, each new target is fitted largely on the same transitions as the last.
-An error that one copy writes into the target can therefore be bootstrapped again and again from the
-same data. More updates per env step (ρ) would strengthen that loop.
+Within each pair, it is the replay ratio that sets the order, not this quantity.
 
-This predicts that at a fixed K and ρ, a larger buffer should cut the overshoot and a smaller one
-should raise it. That is a direct test for later. Week 4's rejection rule had already listed the
-buffer as the next suspect.
+- **Turnover.** With 20 copies per turnover, each new target is fitted largely on the same
+  transitions as the last. An error that one copy writes into the target can therefore be
+  bootstrapped again and again from the same data, and a higher ρ strengthens that loop. On this
+  reading, a *larger* buffer at fixed K and ρ means more copies per turnover and so *more* overshoot.
+- **Overfitting.** The network overfits a small, narrow dataset and extrapolates badly outside it.
+  On this reading, a larger, more varied buffer means *less* overshoot.
+
+The two predict opposite effects of buffer size. Buffer size also leaves the number of replays per
+transition unchanged (ρ × batch = 12.8), so it separates the two cleanly. Week 4's rejection rule
+had already listed the buffer as the next suspect.
+
+The test is pre-registered in `docs/preregistration_week5c.md`: buffer sizes of 2,500, 10,000 and
+40,000 at the default K and ρ.
 
 ## 6. What this means
 
@@ -235,6 +244,14 @@ python scripts/run_week4.py --max-parallel 10            # week 4 (cell C, seeds
 python scripts/run_week5b.py --max-parallel 10           # test 2: 15 new runs, figures/week5b_summary.md
 python scripts/run_week5b.py --summary-only              # tables and figures from existing runs
 ```
+
+## Corrections
+
+- **Day 33.** §5 first said that the turnover hypothesis predicts *less* overshoot from a larger
+  buffer. That is backwards: a larger buffer gives more copies per turnover, so the hypothesis
+  predicts more. §5 also said that copies per turnover "orders all four cells"; it only separates
+  the fast-copy pair from the slow-copy pair. Both are corrected above. No result or statistic
+  changed.
 
 ## References
 

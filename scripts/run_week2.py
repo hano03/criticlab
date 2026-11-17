@@ -44,10 +44,14 @@ ALGOS = {
     "dqn_g10": ("criticlab.dqn", ["--gradient-steps", "10"]),   # 500 updates per target copy
     # week 5b: slow target at the high replay ratio, 5,000 updates per target copy
     "dqn_tgt5000_g10": ("criticlab.dqn", ["--target-network-frequency", "5000", "--gradient-steps", "10"]),
+    # week 5c: replay buffer size at the default copy interval and replay ratio
+    "dqn_buf2500": ("criticlab.dqn", ["--buffer-size", "2500"]),
+    "dqn_buf40000": ("criticlab.dqn", ["--buffer-size", "40000"]),
 }
 SLOW_FIRST = ["sac", "td3", "td3_no_cdq", "ddpg"]           # the week-2 sweep, slowest first
 JOB_ORDER = SLOW_FIRST + ["ppo", "ppo_lam0.8", "ppo_lam1.0",
                           "dqn_tgt5000_g10", "dqn_g10", "dqn_g3",  # weeks 5 and 5b: slowest first
+                          "dqn_buf2500", "dqn_buf40000",          # week 5c
                           "dqn", "double_dqn", "dqn_tgt5000", "double_dqn_tgt5000"]
 # Day 6 dress rehearsal, Hopper-v5, one thread per process, 3 running at once. PPO: estimated on
 # Day 16 from Hopper/HalfCheetah runs with 10 probe episodes, scaled to the user's machine by the
@@ -60,11 +64,13 @@ DQN_SPS = 1000
 # once: 3 updates per call ran at 0.55x and 10 at 0.24x the speed of 1. Scaled to DQN_SPS:
 DQN_G3_SPS, DQN_G10_SPS = 550, 250
 MEASURED_SPS = {"dqn_g3": DQN_G3_SPS, "dqn_g10": DQN_G10_SPS, "dqn_tgt5000_g10": DQN_G10_SPS,
+                "dqn_buf2500": DQN_SPS, "dqn_buf40000": DQN_SPS,
                 "sac": 75, "td3": 127, "td3_no_cdq": 127, "ddpg": 127,
                 "ppo": PPO_SPS, "ppo_lam0.8": PPO_SPS, "ppo_lam1.0": PPO_SPS,
                 "dqn": DQN_SPS, "double_dqn": DQN_SPS, "dqn_tgt5000": DQN_SPS, "double_dqn_tgt5000": DQN_SPS}
 DEFAULT_GAE_LAMBDA = 0.95
 DEFAULT_TARGET_PERIOD = 500  # CleanRL dqn.py: hard target copy every 500 env steps
+DEFAULT_BUFFER = 10_000      # CleanRL dqn.py replay buffer
 
 
 def algo_key(meta: dict) -> str:
@@ -80,7 +86,9 @@ def algo_key(meta: dict) -> str:
         period = int(meta.get("target_network_frequency", DEFAULT_TARGET_PERIOD))
         key = base if period == DEFAULT_TARGET_PERIOD else f"{base}_tgt{period}"
         steps = int(meta.get("gradient_steps", 1))  # runs made before the flag existed had 1
-        return key if steps == 1 else f"{key}_g{steps}"
+        key = key if steps == 1 else f"{key}_g{steps}"
+        buffer = int(meta.get("buffer_size", DEFAULT_BUFFER))
+        return key if buffer == DEFAULT_BUFFER else f"{key}_buf{buffer}"
     return algo
 
 
