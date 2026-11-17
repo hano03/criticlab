@@ -85,3 +85,33 @@ def test_tiny_cartpole_run_writes_a_report(tmp_path, double):
     assert m["eval/deterministic_return_mean"] > 0 and m["bias/q_max"] >= m["bias/q_mean"]
     assert "td/abs_mean" in m and "twin/abs_diff_mean" not in m
     assert m["dqn/epsilon"] < 1.0
+
+
+@pytest.mark.parametrize("gradient_steps", [1, 3])
+def test_gradient_steps_sets_updates_per_training_call(tmp_path, monkeypatch, gradient_steps):
+    calls = []
+    original = torch.optim.Adam.step
+
+    def counting_step(self, *a, **kw):
+        calls.append(1)
+        return original(self, *a, **kw)
+
+    monkeypatch.setattr(torch.optim.Adam, "step", counting_step)
+    args = dqn.Args(env_id="CartPole-v1", total_timesteps=600, learning_starts=100, train_frequency=10,
+                    gradient_steps=gradient_steps, target_network_frequency=50, probe_every=600,
+                    probe_episodes=1, probe_horizon=10, eval_episodes=1, log_every=100, runs_dir=str(tmp_path))
+    run_dir = dqn.main(args)
+    assert len(calls) == (600 - 100) // 10 * gradient_steps   # 50 training calls
+    meta = json.loads((Path(run_dir) / "critic_report.json").read_text(encoding="utf-8"))["meta"]
+    assert meta["gradient_steps"] == gradient_steps
+
+
+def test_one_gradient_step_reproduces_the_run_without_the_flag(tmp_path):
+    """gradient_steps = 1 must not change a single number: week-4 results stay comparable."""
+    def run(sub, **kw):
+        args = dqn.Args(env_id="CartPole-v1", total_timesteps=600, learning_starts=100, train_frequency=5,
+                        target_network_frequency=50, probe_every=600, probe_episodes=2, probe_horizon=10,
+                        eval_episodes=1, log_every=100, runs_dir=str(tmp_path / sub), **kw)
+        report = json.loads((Path(dqn.main(args)) / "critic_report.json").read_text(encoding="utf-8"))
+        return report["probes"][-1]["raw"]["q"]
+    assert run("a") == run("b", gradient_steps=1)

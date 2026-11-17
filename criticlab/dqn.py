@@ -22,6 +22,11 @@ epsilon 1 -> 0.05 over the first half of training). Deliberate changes:
      stops at 500 steps, so with probe_horizon = 500 a solved policy would leave almost no usable
      states. The critic bootstraps through the time limit, so it estimates the infinite-horizon
      value, and longer probe episodes simply give more ground truth for it.
+  5. --gradient-steps: gradient updates per training call (default 1, as in CleanRL). With the
+     target copied every `target_network_frequency` env steps, the online network takes
+     target_network_frequency / train_frequency * gradient_steps updates against each frozen
+     target: 500 / 10 * 1 = 50 by default. The week-5 sweep varies this number at a fixed copy
+     interval. With gradient_steps = 1 a run is identical to one made before the flag existed.
 
 Run:
     python -m criticlab.dqn --env-id CartPole-v1 --seed 0 --probe-max-episode-steps 1000
@@ -66,7 +71,9 @@ class Args:
     """fraction of total_timesteps over which epsilon decays from start_e to end_e"""
     learning_starts: int = 10_000
     train_frequency: int = 10
-    """one gradient step per this many environment steps"""
+    """one training call per this many environment steps"""
+    gradient_steps: int = 1
+    """gradient updates per training call, each on a fresh batch"""
     double: bool = False
     """Double DQN target: online network picks the action, target network values it"""
     probe_every: int = 10_000
@@ -235,14 +242,15 @@ def main(args: Args) -> str:
         # 3. learn
         if step > args.learning_starts:
             if step % args.train_frequency == 0:
-                data = rb.sample(args.batch_size, rng)
-                target = td_target(q_network, target_network, data, args.gamma, args.double)
-                q_pred = q_network(data["obs"]).gather(1, data["acts"].unsqueeze(1)).squeeze(1)
-                loss = F.mse_loss(q_pred, target)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                if step % args.log_every == 0:
+                for _ in range(args.gradient_steps):  # the target network stays frozen throughout
+                    data = rb.sample(args.batch_size, rng)
+                    target = td_target(q_network, target_network, data, args.gamma, args.double)
+                    q_pred = q_network(data["obs"]).gather(1, data["acts"].unsqueeze(1)).squeeze(1)
+                    loss = F.mse_loss(q_pred, target)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                if step % args.log_every == 0:  # the last update of this call
                     writer.add_scalar("losses/td_loss", loss.item(), step)
                     writer.add_scalar("losses/q_values", q_pred.mean().item(), step)
                     last_td = td_error_stats(q_pred.detach().numpy(), target.numpy())

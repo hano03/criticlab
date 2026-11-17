@@ -40,10 +40,13 @@ import numpy as np  # noqa: E402
 # Slot 8 (red) for DQN; Double DQN is a 9th entity, so it shares the hue and differs by dash
 # pattern and direct label (composite encoding) rather than taking a generated colour. The target
 # period is ordinal, so it is a lightness step of the same red (#e34948 -> #9b2b2b, validated as an
-# ordinal ramp): lightness = target period, dash = Double DQN.
+# ordinal ramp): lightness = target period, dash = Double DQN. Week 5 varies gradient updates per
+# target copy (50 by default, 150, 500) at the default period: the same ramp with a middle step
+# (#e34948 -> #be3a39 -> #9b2b2b, validated with --ordinal), so across weeks 4 and 5 darker red
+# always means more updates against each frozen target (the 5,000-step period also gives 500).
 COLORS = {"td3": "#2a78d6", "ddpg": "#eb6834", "sac": "#1baf7a", "td3_no_cdq": "#eda100", "ppo": "#e87ba4",
           "ppo_lam0.8": "#008300", "ppo_lam1.0": "#6250d6", "dqn": "#e34948", "double_dqn": "#e34948",
-          "dqn_tgt5000": "#9b2b2b", "double_dqn_tgt5000": "#9b2b2b"}
+          "dqn_tgt5000": "#9b2b2b", "double_dqn_tgt5000": "#9b2b2b", "dqn_g3": "#be3a39", "dqn_g10": "#9b2b2b"}
 LABELS = {"td3": "TD3", "ddpg": "DDPG", "sac": "SAC", "td3_no_cdq": "TD3 w/o clipped double-Q",
           "ppo": "PPO, λ = 0.95", "ppo_lam0.8": "PPO, λ = 0.8", "ppo_lam1.0": "PPO, λ = 1.0",
           "dqn": "DQN", "double_dqn": "Double DQN",
@@ -51,8 +54,9 @@ LABELS = {"td3": "TD3", "ddpg": "DDPG", "sac": "SAC", "td3_no_cdq": "TD3 w/o cli
 STYLES = {"td3_no_cdq": "--", "ppo_lam0.8": "--", "ppo_lam1.0": ":", "double_dqn": "--",
           "double_dqn_tgt5000": "--"}  # secondary encoding
 ORDER = ["ddpg", "td3_no_cdq", "td3", "sac", "ppo", "ppo_lam0.8", "ppo_lam1.0",
-         "dqn", "double_dqn", "dqn_tgt5000", "double_dqn_tgt5000"]
+         "dqn", "double_dqn", "dqn_tgt5000", "double_dqn_tgt5000", "dqn_g3", "dqn_g10"]
 DEFAULT_TARGET_PERIOD = 500
+DEFAULT_TRAIN_FREQUENCY = 10
 DEFAULT_GAE_LAMBDA = 0.95
 FALLBACK = "#6250d6"
 
@@ -85,13 +89,20 @@ def group_key(meta: dict) -> str:
     if algo == "dqn":
         base = "double_dqn" if meta.get("double") else "dqn"
         period = int(meta.get("target_network_frequency", DEFAULT_TARGET_PERIOD))
-        return base if period == DEFAULT_TARGET_PERIOD else f"{base}_tgt{period}"
+        key = base if period == DEFAULT_TARGET_PERIOD else f"{base}_tgt{period}"
+        steps = int(meta.get("gradient_steps", 1))
+        return key if steps == 1 else f"{key}_g{steps}"
     return algo
 
 
 def label(key: str) -> str:
     if key in LABELS:
         return LABELS[key]
+    if "dqn" in key and "_g" in key:  # gradient steps per call -> updates per target copy
+        rest, steps = key.rsplit("_g", 1)
+        period = int(rest.split("_tgt")[1]) if "_tgt" in rest else DEFAULT_TARGET_PERIOD
+        per_copy = period // DEFAULT_TRAIN_FREQUENCY * int(steps)
+        return f"{label(rest)}, {per_copy:,} updates per copy"
     if "dqn_tgt" in key:
         base, period = key.split("_tgt")
         return f"{LABELS.get(base, base)}, target every {int(period):,}"
