@@ -9,7 +9,8 @@ lambda, count as their own groups) and drawn as mean +/- sample std across seeds
     1 return                 2 normalised Q bias       3 calibration at the final probe
     4 rank calibration       5 twin disagreement       6 TD error |delta|
 Panels 5 and 6 need twin critics and a replay buffer. When no run in a figure has them (PPO
-only), they show PPO's explained variance and value loss instead.
+only), they show PPO's explained variance and value loss instead. Without twin critics (DQN),
+panel 5 shows the largest predicted value on probe states, to spot soft divergence.
 
 Options for comparing sweeps of different lengths (week 2: 300k steps, week 3 PPO: 1M):
     python scripts/plot_report.py runs/week2 runs/week3 --max-step 300000 --only ddpg td3 td3_no_cdq sac ppo
@@ -36,12 +37,22 @@ import numpy as np  # noqa: E402
 
 # Colour follows the algorithm, never its rank (validated categorical slots 1-4, light mode).
 # Slots 6 and 7 (green, violet) for the PPO lambda variants; validated with slot 5 as a set.
+# Slot 8 (red) for DQN; Double DQN is a 9th entity, so it shares the hue and differs by dash
+# pattern and direct label (composite encoding) rather than taking a generated colour. The target
+# period is ordinal, so it is a lightness step of the same red (#e34948 -> #9b2b2b, validated as an
+# ordinal ramp): lightness = target period, dash = Double DQN.
 COLORS = {"td3": "#2a78d6", "ddpg": "#eb6834", "sac": "#1baf7a", "td3_no_cdq": "#eda100", "ppo": "#e87ba4",
-          "ppo_lam0.8": "#008300", "ppo_lam1.0": "#6250d6"}
+          "ppo_lam0.8": "#008300", "ppo_lam1.0": "#6250d6", "dqn": "#e34948", "double_dqn": "#e34948",
+          "dqn_tgt5000": "#9b2b2b", "double_dqn_tgt5000": "#9b2b2b"}
 LABELS = {"td3": "TD3", "ddpg": "DDPG", "sac": "SAC", "td3_no_cdq": "TD3 w/o clipped double-Q",
-          "ppo": "PPO, λ = 0.95", "ppo_lam0.8": "PPO, λ = 0.8", "ppo_lam1.0": "PPO, λ = 1.0"}
-STYLES = {"td3_no_cdq": "--", "ppo_lam0.8": "--", "ppo_lam1.0": ":"}  # secondary encoding
-ORDER = ["ddpg", "td3_no_cdq", "td3", "sac", "ppo", "ppo_lam0.8", "ppo_lam1.0"]
+          "ppo": "PPO, λ = 0.95", "ppo_lam0.8": "PPO, λ = 0.8", "ppo_lam1.0": "PPO, λ = 1.0",
+          "dqn": "DQN", "double_dqn": "Double DQN",
+          "dqn_tgt5000": "DQN, target every 5,000", "double_dqn_tgt5000": "Double DQN, target every 5,000"}
+STYLES = {"td3_no_cdq": "--", "ppo_lam0.8": "--", "ppo_lam1.0": ":", "double_dqn": "--",
+          "double_dqn_tgt5000": "--"}  # secondary encoding
+ORDER = ["ddpg", "td3_no_cdq", "td3", "sac", "ppo", "ppo_lam0.8", "ppo_lam1.0",
+         "dqn", "double_dqn", "dqn_tgt5000", "double_dqn_tgt5000"]
+DEFAULT_TARGET_PERIOD = 500
 DEFAULT_GAE_LAMBDA = 0.95
 FALLBACK = "#6250d6"
 
@@ -71,12 +82,19 @@ def group_key(meta: dict) -> str:
     if algo == "ppo":
         lam = float(meta.get("gae_lambda", DEFAULT_GAE_LAMBDA))
         return "ppo" if abs(lam - DEFAULT_GAE_LAMBDA) < 1e-9 else f"ppo_lam{lam}"
+    if algo == "dqn":
+        base = "double_dqn" if meta.get("double") else "dqn"
+        period = int(meta.get("target_network_frequency", DEFAULT_TARGET_PERIOD))
+        return base if period == DEFAULT_TARGET_PERIOD else f"{base}_tgt{period}"
     return algo
 
 
 def label(key: str) -> str:
     if key in LABELS:
         return LABELS[key]
+    if "dqn_tgt" in key:
+        base, period = key.split("_tgt")
+        return f"{LABELS.get(base, base)}, target every {int(period):,}"
     if key.startswith("ppo_lam"):
         return f"PPO, λ = {key[len('ppo_lam'):]}"
     return key
@@ -229,6 +247,9 @@ def line_panels(groups: dict[str, list[dict]]) -> list[tuple[str, str, str | Non
     if not recorded(groups, "twin/abs_diff_mean") and recorded(groups, "ppo/explained_variance"):
         panels[3] = ("5  Explained variance (PPO's own critic metric)", "1 − Var(R − V) / Var(R)",
                      "ppo/explained_variance")
+    elif not recorded(groups, "twin/abs_diff_mean") and recorded(groups, "bias/q_max"):
+        # single-critic value methods (DQN): the largest prediction, to spot soft divergence
+        panels[3] = ("5  Largest predicted value on probe states", "max Q", "bias/q_max")
     if not recorded(groups, "td/abs_mean") and recorded(groups, "ppo/value_loss"):
         panels[4] = ("6  Value loss (scaled reward units)", "value loss", "ppo/value_loss")
     return panels

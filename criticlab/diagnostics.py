@@ -158,7 +158,7 @@ def bias_metrics(q, g, floor: float = NORM_FLOOR) -> dict:
     nan = float("nan")
     if q.size == 0:
         keys = ["bias_mean", "bias_std", "bias_abs_mean", "norm_bias_mean", "norm_bias_median",
-                "norm_bias_std", "pearson", "spearman", "q_mean", "g_mean"]
+                "norm_bias_std", "pearson", "spearman", "q_mean", "q_max", "g_mean"]
         return {"n": 0, **{k: nan for k in keys}}
     bias = q - g
     norm = bias / np.maximum(np.abs(g), floor)
@@ -174,6 +174,9 @@ def bias_metrics(q, g, floor: float = NORM_FLOOR) -> dict:
         "pearson": _corr(q, g),
         "spearman": _corr(_rank(q), _rank(g)),
         "q_mean": float(q.mean()),
+        # largest prediction: above r_max / (1 - gamma) no policy can earn it ("soft divergence",
+        # van Hasselt et al., 2018), whatever the Monte Carlo returns say
+        "q_max": float(q.max()),
         "g_mean": float(g.mean()),
     }
 

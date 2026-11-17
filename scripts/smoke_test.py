@@ -1,4 +1,4 @@
-"""Smoke test: each algorithm (TD3, DDPG, SAC, PPO) runs 5k steps on Pendulum-v1 and writes a valid critic report.
+"""Smoke test: each algorithm runs 5k steps (Pendulum-v1; CartPole-v1 for DQN) and writes a valid critic report.
 
 Usage (from the repo root):
     python scripts/smoke_test.py          # every algorithm in ALGOS
@@ -12,17 +12,18 @@ import sys
 import tempfile
 from pathlib import Path
 
-ALGOS = ["td3", "ddpg", "sac", "ppo"]
+ALGOS = ["td3", "ddpg", "sac", "ppo", "dqn"]
 # Off-policy algorithms start learning after 1k random steps. PPO has no warm-up; instead its
 # rollout length must divide 5000 so the run ends exactly at the second probe (10 updates x 500).
 ALGO_ARGS = {"ppo": ["--num-steps", "500", "--num-minibatches", "5", "--update-epochs", "2"]}
 DEFAULT_ARGS = ["--learning-starts", "1000"]
+ALGO_ENV = {"dqn": "CartPole-v1"}  # DQN needs discrete actions
 
 
 def smoke(algo: str) -> None:
     with tempfile.TemporaryDirectory() as runs_dir:
         cmd = [sys.executable, "-m", f"criticlab.{algo}",
-               "--env-id", "Pendulum-v1",
+               "--env-id", ALGO_ENV.get(algo, "Pendulum-v1"),
                "--total-timesteps", "5000",
                *ALGO_ARGS.get(algo, DEFAULT_ARGS),
                "--probe-every", "2500",

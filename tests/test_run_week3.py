@@ -72,7 +72,8 @@ def test_key_from_metadata_matches_job_key_and_plot_groups():
         meta = {"algo": "ppo", "gae_lambda": lam}
         assert run_week2.algo_key(meta) == key == plot_report.group_key(meta)
     for meta in ({"algo": "td3", "clipped_double_q": False}, {"algo": "td3", "clipped_double_q": True},
-                 {"algo": "sac"}, {"algo": "ddpg"}, {"algo": "ppo"}):
+                 {"algo": "sac"}, {"algo": "ddpg"}, {"algo": "ppo"}, {"algo": "dqn", "double": False},
+                 {"algo": "dqn", "double": True}):
         assert run_week2.algo_key(meta) == plot_report.group_key(meta)
 
 
@@ -94,3 +95,13 @@ def test_estimate_four_rounds_at_six(tmp_path):
     cpu, wall = run_week2.estimate_hours(_jobs(tmp_path), TOTAL, 6)
     one = TOTAL / run_week2.PPO_SPS / 3600
     assert abs(cpu - 20 * one) < 1e-9 and abs(wall - 4 * one) < 1e-9
+
+
+def test_dqn_keys_and_flags(tmp_path):
+    assert run_week2.algo_key({"algo": "dqn", "double": True}) == "double_dqn"
+    assert run_week2.algo_key({"algo": "dqn", "double": False}) == "dqn"
+    jobs = run_week2.build_jobs(["dqn", "double_dqn"], ["CartPole-v1"], [0], 500_000, 5, tmp_path)
+    argv = {j["key"][1]: j["argv"] for j in jobs}
+    assert argv["dqn"][0] == argv["double_dqn"][0] == "criticlab.dqn"
+    assert "--double" in argv["double_dqn"] and "--double" not in argv["dqn"]
+    assert run_week2.expected_last_step({"algo": "dqn", "total_timesteps": 500_000}) == 500_000

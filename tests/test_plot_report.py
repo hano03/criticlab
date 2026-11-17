@@ -140,3 +140,19 @@ def test_max_step_and_only_filters(tmp_path):
     assert [p["step"] for p in by_env["Hopper-v5"]["ppo"][0]["probes"]] == [10_000, 20_000]
     with pytest.raises(SystemExit):
         plot_report.plot([str(tmp_path)], str(tmp_path / "x.png"), only=["sac"])
+
+
+def test_dqn_groups_and_q_max_panel(tmp_path):
+    for double in (False, True):
+        _write_report(tmp_path, "CartPole-v1", "dqn", int(double), twin=False, double=double)
+    for report in tmp_path.rglob("critic_report.json"):
+        data = json.loads(report.read_text(encoding="utf-8"))
+        for probe in data["probes"]:
+            probe["metrics"]["bias/q_max"] = 120.0
+        report.write_text(json.dumps(data), encoding="utf-8")
+    groups = plot_report.load_groups([str(tmp_path)])["CartPole-v1"]
+    assert sorted(groups) == ["double_dqn", "dqn"]
+    assert plot_report.label("double_dqn") == "Double DQN"
+    metrics = [m for _, _, m in plot_report.line_panels(groups)]
+    assert metrics[3:] == ["bias/q_max", "td/abs_mean"]
+    assert len(plot_report.plot([str(tmp_path)], str(tmp_path / "cp.png"))) == 2
