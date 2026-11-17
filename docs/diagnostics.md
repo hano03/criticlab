@@ -52,6 +52,22 @@ those six seeds PPO's own explained variance ranged from −3.3 to +0.21: when e
 the same, explained variance divides by a variance close to zero and says nothing about the
 critic. The probe still does.
 
+**DQN and Double DQN.** The critic is Q(s, a) of the greedy policy (the policy the max in the
+target evaluates), so the probe runs with ε = 0. Two details:
+
+- Probe episodes may run past the training time limit (`--probe-max-episode-steps`). The critic
+  bootstraps through time limits, so it estimates the infinite-horizon value; longer probe episodes
+  just give more ground truth. CartPole-v1 stops at 500 steps, so with H = 500 a solved policy would
+  leave one usable state per episode; with probe episodes of 1,000 steps it leaves 501.
+- Bounded rewards bound Q. CartPole pays +1 per step, so no policy is worth more than
+  1 / (1 − γ) = 100; Acrobot pays −1 per step, so Q ≤ 0. `bias/q_max`, the largest prediction on
+  probe states, shows a critic going past that ceiling ("soft divergence", van Hasselt et al., 2018)
+  without needing any Monte Carlo return.
+- With hard target copies, honest values can grow by at most one reward step per copy, so after n
+  copies they are capped by the *copy envelope* r_max (1 − γ^(n+1)) / (1 − γ). When comparing target
+  periods, compare max Q with this envelope at a matched number of copies; otherwise a slow target
+  looks safe merely because its values have not had time to grow (see `docs/findings_week4.md`).
+
 ## 2. The metrics
 
 All live in `runs/<run>/critic_report.json`, one entry per probe.
@@ -69,6 +85,8 @@ All live in `runs/<run>/critic_report.json`, one entry per probe.
 | `probe/return_mean` | undiscounted return of the probe episodes | For SAC and PPO this is the *stochastic* policy |
 | `eval/deterministic_return_mean` | SAC and PPO: return of the mean action (tanh for SAC) | The return to compare with TD3 and DDPG |
 | `probe/alpha` | SAC only: α used for the soft returns | |
+| `bias/q_max` | largest critic prediction on probe states | Above r_max / (1 − γ), no policy can earn it: soft divergence |
+| `dqn/epsilon` | DQN only: exploration rate at the probe | |
 | `ppo/reward_scale` | PPO only: σ, the running std of the discounted return | V is multiplied by it before comparison with G |
 | `ppo/explained_variance` | PPO only: 1 − Var(R − V)/Var(R) on the last rollout, in scaled units | PPO's usual critic metric. Uninformative when returns barely vary (see §1) |
 | `ppo/value_loss`, `ppo/approx_kl`, `ppo/clipfrac`, `ppo/entropy` | PPO only: last update's statistics | Standard PPO health checks |
