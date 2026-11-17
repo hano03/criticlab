@@ -1,7 +1,8 @@
 # Week 5: what makes DQN's values run away on CartPole
 
-*criticlab · 2026-11-17 · two pre-registered tests: `docs/preregistration_week5.md` (commit `21bc385`) and
-`docs/preregistration_week5b.md` (commit `2e232fb`), each pushed before its runs · reproduce with §8*
+*criticlab · 2026-11-17 · three pre-registered tests: `docs/preregistration_week5.md` (commit `21bc385`),
+`docs/preregistration_week5b.md` (`2e232fb`) and `docs/preregistration_week5c.md` (`0bfc329`), each
+pushed before its runs · reproduce with §8*
 
 **Question.** In week 4, copying DQN's target network every 5,000 env steps instead of every 500
 removed the overshoot on CartPole: max-Q fell from about 250 to just under the ceiling of 100. That
@@ -18,6 +19,10 @@ env steps:
   was still drifting upwards at the end of training, and earned a lower return.
 - The replay ratio is a second factor. Its harm is about seven times smaller when copies are far
   apart.
+- A larger replay buffer also makes the overshoot worse (test 3, outcome TURNOVER), as predicted by
+  the idea that targets rebuilt again and again on the same data feed the runaway. But shrinking the
+  buffer fourfold removed only 14% of the overshoot, whereas spacing the copies out removed 95%. So
+  turnover explains the buffer effect, not the bulk of the copy-interval effect (addendum).
 
 ![Largest prediction against target copies for the four cells, and each seed's peak excess over the copy envelope](../assets/week5_2x2.png)
 
@@ -177,7 +182,8 @@ that the copy interval "not the replay ratio" decides. The data say more than th
   interval. But the slow target's protection of the value estimate did not protect the return at the
   high ratio (D: 370 against C: 472).
 
-**Two hypotheses, post hoc, now under test.** One quantity separates the two fast-copy cells from
+**Two hypotheses, post hoc, then tested (see the addendum: the turnover direction held, but it
+accounts for only a small part of the copy-interval effect).** One quantity separates the two fast-copy cells from
 the two slow-copy cells: *how many target copies happen per turnover of the replay buffer*, buffer
 size / K.
 
@@ -243,7 +249,71 @@ python scripts/run_week5.py --max-parallel 10            # test 1: 30 runs, figu
 python scripts/run_week4.py --max-parallel 10            # week 4 (cell C, seeds 0–4)
 python scripts/run_week5b.py --max-parallel 10           # test 2: 15 new runs, figures/week5b_summary.md
 python scripts/run_week5b.py --summary-only              # tables and figures from existing runs
+python scripts/run_week5c.py --max-parallel 10           # test 3: 20 new runs, figures/week5c_summary.md
 ```
+
+## Addendum: test 3, replay buffer size (week 5c)
+
+**Why.** Section 5 proposed two explanations with opposite predictions for buffer size:
+
+- **Turnover:** more target copies per buffer turnover means more overshoot, so a larger buffer
+  should make it worse.
+- **Overfitting:** a narrow dataset is the problem, so a larger buffer should make it better.
+
+Buffer size leaves the number of replays per transition unchanged (12.8), so it separates the two.
+
+**Design** (`docs/preregistration_week5c.md`). Copies every 500 env steps, 0.1 updates per env step,
+500k steps, 10 seeds per cell. The buffer holds 2,500 (new), 10,000 (test 1's default runs) or
+40,000 (new) transitions: 5, 20 and 80 copies per turnover. The primary measure is test 1's: peak
+excess over the envelope, all probes up to 500k. No direction was predicted.
+
+![Largest prediction over training for the three buffer sizes, and each seed's peak excess over the copy envelope](../assets/week5c_buffer.png)
+
+| Buffer | Copies per turnover | Peak excess, ≤ 500k (primary) | Peak max-Q (step) | Probes > 110 | Return, 400k–500k | Median bias, 400k–500k |
+|---|---|---|---|---|---|---|
+| 2,500 | 5 | +134.4 ± 8.9 | 227.2 ± 9.4 (144k) | 56% | 490.6 ± 19.5 | +0.020 ± 0.010 |
+| 10,000 | 20 | +156.9 ± 6.6 | 249.3 ± 6.5 (140k) | 57% | 485.9 ± 21.4 | +0.071 ± 0.090 |
+| 40,000 | 80 | +225.8 ± 17.1 | 319.8 ± 17.3 (151k) | 66% | 489.5 ± 14.9 | +0.060 ± 0.032 |
+
+**Outcome: TURNOVER.** All three of the rule's conditions held:
+
+- **40,000 − 2,500 = +91.4 [+78.3, +104.5]**, p < 0.001.
+- The means rise in order across the three sizes.
+- Spearman ρ(log buffer, excess) = +0.94 over the 30 runs, p < 0.001.
+
+Both steps are significant on their own:
+
+- 2,500 vs 10,000: −22.5 [−29.9, −15.1];
+- 40,000 vs 10,000: +68.9 [+56.2, +81.6].
+
+The overfitting explanation, which predicted the opposite direction, is ruled out for this range.
+
+**How much the buffer explains.** The rule only says which way the effect goes. In size, turnover
+does not account for most of what the copy interval does:
+
+| Change from the default (copy every 500, buffer 10,000) | Copies per turnover | Peak excess | Change |
+|---|---|---|---|
+| Buffer ÷4 (2,500) | 20 → 5 | +134.4 | −22.5 (−14%) |
+| Copy interval ×10 (5,000; test 2, cell C) | 20 → 2 | +8.3 | −148.6 (−95%) |
+
+If copies per turnover were the whole story, going from 5 to 2 copies per turnover would have to
+remove more than five times what going from 20 to 5 removed. That would take a sharp threshold
+between 5 and 2. This cannot be ruled out: a 1,000-transition buffer at the default copy interval
+would test it directly. The simpler reading is that **the copy interval matters beyond turnover**.
+The amount of new data that enters between two copies (500 against 5,000 transitions) is the
+leading candidate, and buffer size does not change it.
+
+**Not predicted:**
+
+- **Late return was unaffected** (2,500 vs 10,000: +4.7 [−14.6, +23.9]; 40,000 vs 10,000:
+  +3.6 [−13.9, +21.1]). All three overshoots decayed to about 103–105 by 500k.
+- **Learning speed may have differed.** In the standard figure, the 40,000 buffer's median return
+  stays near 300 until about 300k steps and reaches 500 only around 420k. The 2,500 buffer is near
+  480 by 200k. This was read off the figure, not tested.
+
+**Limitation (pre-registered).** A larger buffer also holds older, more off-policy data from more
+exploratory policies. That is a third mechanism this test cannot separate from turnover, so "supports
+turnover" means "supports the direction turnover predicts".
 
 ## Corrections
 

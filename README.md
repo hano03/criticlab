@@ -40,11 +40,12 @@ What the critics show:
   - Ten times more gradient updates per copy, at the same copy interval, *more than doubled* the overshoot (+232 [+132, +331]).
   - Copying every 5,000 steps still removed 91% of the overshoot at that ten times higher replay ratio. The replay ratio's harm was about 7× smaller with sparse copies.
   - The slow target slowed the runaway but did not stop it: max-Q was still rising at 1.5M steps, and return was lower.
+  - A larger replay buffer made the overshoot worse (+91 [+78, +105] from 2,500 to 40,000), which points to targets being rebuilt on the same data. But a 4× smaller buffer removed only 14% of the overshoot, against 95% for spacing out the copies.
   
   See [`docs/findings_week5.md`](docs/findings_week5.md).
 - **Cheap signals don't replace the probe.** TD error and twin disagreement separate algorithms, but within a run they do not track the measured bias once training trends and the size of Q are removed, and they rose before a collapse about as often as chance. See [`docs/findings_q1_signals.md`](docs/findings_q1_signals.md).
 
-Full analysis, statistics and limits: [`docs/findings_week2.md`](docs/findings_week2.md) (DDPG, TD3, SAC), [`docs/findings_week3.md`](docs/findings_week3.md) (PPO, GAE λ), [`docs/findings_week4.md`](docs/findings_week4.md) (DQN, Double DQN, target network) and [`docs/findings_week5.md`](docs/findings_week5.md) (target copy interval × replay ratio).
+Full analysis, statistics and limits: [`docs/findings_week2.md`](docs/findings_week2.md) (DDPG, TD3, SAC), [`docs/findings_week3.md`](docs/findings_week3.md) (PPO, GAE λ), [`docs/findings_week4.md`](docs/findings_week4.md) (DQN, Double DQN, target network) and [`docs/findings_week5.md`](docs/findings_week5.md) (target copy interval, replay ratio and buffer size).
 
 ## Quickstart
 
@@ -144,7 +145,7 @@ criticlab/
 
 ## Roadmap
 
-- Week 5c (pre-registered, running): does the replay buffer's size change DQN's overshoot, and in which direction? The turnover and overfitting explanations predict opposite answers. See [`docs/preregistration_week5c.md`](docs/preregistration_week5c.md).
+- Open question from week 5: does the copy interval matter beyond copies per buffer turnover? A 1,000-transition buffer at the default copy interval (2 copies per turnover, like the slow target) would answer it.
 - Other open questions: the cost of TD3's underestimation, critic behaviour around collapses, early optimism with small GAE λ.
 - Walker2d and Ant if time allows.
 
