@@ -49,7 +49,7 @@ Full analysis, statistics and limits: [`docs/findings_week2.md`](docs/findings_w
 
 ## Quickstart
 
-Works on Linux and Windows, on CPU. No GPU needed.
+Works on Linux and Windows, on CPU. No GPU needed. On Linux, install the CPU build of PyTorch first (`pip install torch --index-url https://download.pytorch.org/whl/cpu`); otherwise pip downloads several GB of CUDA libraries you won't use.
 
 ```bash
 git clone https://github.com/hano03/criticlab && cd criticlab
